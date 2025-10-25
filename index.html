@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>QRV Mobile — Operacional</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --laranja:#F97316;
+      --laranja-esc:#ea580c;
+      --azul:#2563EB;
+      --bg:#FFFFFF;
+      --page-bg:#F9FAFB;
+      --texto:#0F172A;
+      --borda:#CBD5E1;
+      --touch-size:52px;
+    }
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; background:var(--page-bg);color:var(--texto);-webkit-tap-highlight-color:transparent}
+    .app{max-width:520px;margin:0 auto;padding:12px;box-sizing:border-box}
+    .card{background:var(--bg);border-radius:14px;padding:16px;margin-top:12px;box-shadow:0 6px 18px rgba(2,6,23,0.06)}
+    h1{font-size:18px;margin:0 0 8px;color:var(--laranja)}
+    label{display:block;font-size:13px;margin-top:10px;font-weight:600}
+    input,select,textarea{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid var(--borda);font-size:15px;margin-top:6px}
+    textarea{min-height:110px;resize:vertical}
+
+    /* Tripulantes list */
+    .tripulantes{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .add-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .add-btn{background:none;border:none;color:var(--azul);font-weight:600;font-size:14px;padding:8px}
+
+    /* fixed send area */
+    .send-area{position:fixed;left:0;right:0;bottom:env(safe-area-inset-bottom,0);padding:12px;background:linear-gradient(0deg, rgba(249,250,251,0.95), rgba(249,250,251,0.6));box-shadow:0 -6px 16px rgba(2,6,23,0.06);display:flex;gap:8px;align-items:center}
+    .primary-btn{flex:1;background:var(--laranja);color:#fff;border:none;border-radius:12px;padding:14px;min-height:var(--touch-size);font-weight:700;font-size:16px}
+    .secondary-btn{background:#fff;border:1px solid var(--borda);border-radius:12px;padding:12px;min-height:var(--touch-size);font-weight:600}
+
+    /* small helpers */
+    .small{font-size:13px;color:#475569}
+    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:80px;background:var(--laranja);color:#fff;padding:10px 14px;border-radius:10px;display:none}
+    .toast.show{display:block}
+
+    @media (prefers-color-scheme:dark){
+      :root{--bg:#0b1220;--page-bg:#071126;--texto:#e6eef8;--borda:#1f2937}
+      .card{box-shadow:none}
+      .send-area{background:linear-gradient(0deg, rgba(2,6,23,0.95), rgba(2,6,23,0.7));}
+    }
+
+    @media (min-width:520px){
+      body{background:linear-gradient(90deg,#f8fafc,#fff)}
+      .app{margin-top:18px}
+      .card{padding:20px}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <h1>QRV Operacional</h1>
+      <form id="qrvForm" autocomplete="off">
+        <label for="vt">Viatura (VT)</label>
+        <input id="vt" name="vt" type="text" inputmode="numeric" placeholder="Ex: 215" required>
+
+        <label for="condutor">Condutor</label>
+        <input id="condutor" name="condutor" type="text" placeholder="Nome do condutor" required>
+
+        <label>Tripulantes</label>
+        <div id="tripulantes" class="tripulantes">
+          <input class="trip-input" placeholder="Tripulante 01" required>
+        </div>
+        <div class="add-row">
+          <button type="button" id="addTrip" class="add-btn">+ Adicionar</button>
+          <div class="small">Toque para adicionar até 6</div>
+        </div>
+
+        <label for="qru">QRU</label>
+        <select id="qru" required>
+          <option value="">Selecione...</option>
+          <option>CONTROLE DE TRÁFEGO</option>
+          <option>APOIO OPERACIONAL</option>
+          <option>ACIDENTE</option>
+          <option>RETIRADA DE OBSTÁCULO</option>
+          <option>OUTROS</option>
+        </select>
+
+        <label for="qth">QTH</label>
+        <input id="qth" name="qth" type="text" placeholder="Ex: RUA 01 x RUA 02" required>
+
+        <div style="height:84px"></div> <!-- espaço para o botão fixo -->
+      </form>
+    </div>
+  </div>
+
+  <div class="send-area" role="region" aria-label="Enviar QRV">
+    <button id="previewBtn" class="secondary-btn" aria-label="Pré-visualizar">Pré-visualizar</button>
+    <button id="sendBtn" class="primary-btn" aria-label="Enviar para WhatsApp">Enviar (Abrir WhatsApp)</button>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script defer>
+    (function(){
+      const form = document.getElementById('qrvForm');
+      const vt = document.getElementById('vt');
+      const condutor = document.getElementById('condutor');
+      const qru = document.getElementById('qru');
+      const qth = document.getElementById('qth');
+      const tripContainer = document.getElementById('tripulantes');
+      const addTrip = document.getElementById('addTrip');
+      const sendBtn = document.getElementById('sendBtn');
+      const previewBtn = document.getElementById('previewBtn');
+      const toast = document.getElementById('toast');
+
+      // foco inicial no primeiro campo vazio
+      window.addEventListener('load', ()=>{
+        try{ const first = document.querySelector('input[required]'); if(first) first.focus(); }catch(e){}
+      });
+
+      // adicionar tripulante (até 6)
+      addTrip.addEventListener('click', ()=>{
+        const current = tripContainer.querySelectorAll('.trip-input').length;
+        if(current >= 6){ showToast('Máx. 6 tripulantes'); return; }
+        const input = document.createElement('input');
+        input.className='trip-input';
+        input.placeholder = `Tripulante ${current+1}`;
+        tripContainer.appendChild(input);
+        input.focus();
+      });
+
+      // gerar texto do QRV
+      function gerarTexto(){
+        const vtVal = vt.value.trim();
+        const cond = condutor.value.trim();
+        const qruVal = qru.value;
+        const qthVal = qth.value.trim();
+        const trip = Array.from(tripContainer.querySelectorAll('.trip-input')).map(i=>i.value.trim()).filter(Boolean);
+
+        return `VT ${vtVal}\n${cond} (Condutor)\n${trip.join('\n')}\nQRU: ${qruVal}\nQTH: ${qthVal}`;
+      }
+
+      // valida básica
+      function validar(){
+        if(!vt.value.trim() || !condutor.value.trim() || !qru.value || !qth.value.trim()){
+          showToast('Preencha todos os campos obrigatórios');
+          return false;
+        }
+        return true;
+      }
+
+      // mostrar toast
+      function showToast(msg,ms=1800){
+        toast.textContent = msg; toast.classList.add('show');
+        setTimeout(()=>toast.classList.remove('show'), ms);
+      }
+
+      // tentativa de abrir o app WhatsApp via deep link; se falhar, copia texto e orienta abrir app manualmente
+      function enviarParaWhatsApp(texto){
+        const encoded = encodeURIComponent(texto);
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const appLink = `whatsapp://send?text=${encoded}`;
+
+        // tentativa - alterar location (abre app se instalado)
+        let opened = false;
+        const start = Date.now();
+        // cria iframe para alguns browsers que bloqueiam location change
+        const fallback = setTimeout(()=>{
+          // se após 700ms ainda não mudou de contexto, assumimos falha
+          navigator.clipboard.writeText(texto).then(()=>{
+            showToast('WhatsApp não detectado — texto copiado. Abra o app e cole.');
+            try{ navigator.vibrate?.(100); }catch(e){}
+          }).catch(()=>{
+            showToast('Não foi possível abrir o app. Copiado para a área de transferência.');
+          });
+        },700);
+
+        // Tenta abrir via location (recomendado)
+        try{
+          window.location.href = appLink;
+        }catch(e){
+          // fallback
+          clearTimeout(fallback);
+          navigator.clipboard.writeText(texto).then(()=> showToast('Texto copiado. Abra o WhatsApp e cole.'));
+        }
+      }
+
+      // Pré-visualizar em modal simples (alert nativo para ser rápido)
+      previewBtn.addEventListener('click', ()=>{
+        if(!validar()) return;
+        const txt = gerarTexto();
+        // usam alert nativo por ser rápido e sem overhead
+        alert(txt);
+      });
+
+      // Envio direto (mínimos toques) — abre o app com a mensagem pronta
+      sendBtn.addEventListener('click', ()=>{
+        if(!validar()) return;
+        const txt = gerarTexto();
+        enviarParaWhatsApp(txt);
+      });
+
+      // submit via Enter em campos - envio rápido
+      form.addEventListener('submit', (e)=>{ e.preventDefault(); sendBtn.click(); });
+
+      // tecla Enter salta para o próximo campo
+      form.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){
+          const focusable = Array.from(form.querySelectorAll('input,select,textarea'));
+          const idx = focusable.indexOf(document.activeElement);
+          if(idx >=0 && idx < focusable.length-1){
+            e.preventDefault(); focusable[idx+1].focus();
+          }
+        }
+      });
+
+      // Previne abertura em new tab a partir de links (não há links externos)
+      // Não há histórico/backup para manter a versão enxuta (pedido do usuário)
+
+    })();
+  </script>
+</body>
+</html>
